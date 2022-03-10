@@ -6,14 +6,17 @@ import numpy
 pg.init()
 
 def rollMatrix(theta):
-    return(numpy.array([(math.cos(theta), -math.sin(theta), 0), (math.sin(theta), math.cos(theta), 0), (0,0,1)]))
-
-def pitchMatrix(theta):
-    return(numpy.array([(math.cos(theta), 0, math.sin(theta)), (0,1,0), (-math.sin(theta), 0, math.cos(theta))]))
+    matrix = numpy.array([(math.cos(theta), -math.sin(theta), 0), (math.sin(theta), math.cos(theta), 0), (0,0,1)])
+    return(matrix)
 
 def yawMatrix(theta):
-    return(numpy.array([(1,0,0), (0, math.cos(theta), -math.sin(theta)), (0, math.sin(theta), math.cos(theta))]))
+    matrix = numpy.array([(math.cos(theta), 0, math.sin(theta)), (0,1,0), (-math.sin(theta), 0, math.cos(theta))])
+    return(matrix)
 
+def pitchMatrix(theta):
+    matrix = numpy.array([(1,0,0), (0, math.cos(theta), -math.sin(theta)), (0, math.sin(theta), math.cos(theta))])
+    return(matrix)
+'''
 def Rotation3D(position, orientation, isCamera):
     ax, ay, az = position
     tx, ty, tz = orientation
@@ -33,6 +36,14 @@ def Rotation3D(position, orientation, isCamera):
     dx, dy, dz = xyzMatrix
 
     return((dx, dy, dz))
+'''
+def Rotation3DMatrix(position, orientation, isInverted):
+    ax, ay, az = position
+    rotationMatrix = orientation
+    finalMatrix = numpy.matmul(rotationMatrix, numpy.array([ax,ay,az]))
+    if isInverted:
+        finalMatrix = numpy.transpose(finalMatrix)
+    return(finalMatrix)
 
 class Vertex:
     def __init__(self, position):
@@ -41,41 +52,20 @@ class Vertex:
         self.z = position[2]
         self.dx, self.dy, self.dz = (0,0,0)
 
-    def updateCameraPerspective(self, camera, mode):
-        if mode == 'default':
-            ax = self.x - camera.x
-            ay = self.y - camera.y
-            az = self.z - camera.z
-            tx = camera.thetaX
-            ty = camera.thetaY
-            tz = camera.thetaZ
+    def updateCameraPerspective(self, camera):
+        ax = self.x - camera.x
+        ay = self.y - camera.y
+        az = self.z - camera.z
 
-            startMatrix = numpy.array([ax,ay,az])
-            zRotationMatrix = numpy.array([(math.cos(tz), math.sin(tz), 0), (-math.sin(tz), math.cos(tz), 0), (0,0,1)])
-            yRotationMatrix = numpy.array([(math.cos(ty), 0, -math.sin(ty)), (0,1,0), (math.sin(ty), 0, math.cos(ty))])
-            xRotationMatrix = numpy.array([(1,0,0), (0, math.cos(tx), math.sin(tx)), (0, -math.sin(tx), math.cos(tx))])
+        startMatrix = numpy.array([ax,ay,az])
+        finalMatrix = numpy.matmul(camera.rotationMatrix, startMatrix)
 
-            zMatrix = numpy.matmul(startMatrix, zRotationMatrix)
-            yzMatrix = numpy.matmul(zMatrix, yRotationMatrix)
-            xyzMatrix = numpy.matmul(yzMatrix, xRotationMatrix)
-
-            self.dx = xyzMatrix[0]
-            self.dy = xyzMatrix[1]
-            self.dz = xyzMatrix[2]
-        else:
-            ax = self.x - camera.x
-            ay = self.y - camera.y
-            az = self.z - camera.z
-
-            startMatrix = numpy.array([ax,ay,az])
-            finalMatrix = numpy.matmul(camera.rotationMatrix, startMatrix)
-
-            self.dx = finalMatrix[0]
-            self.dy = finalMatrix[1]
-            self.dz = finalMatrix[2]
+        self.dx = finalMatrix[0]
+        self.dy = finalMatrix[1]
+        self.dz = finalMatrix[2]
 
     def getProjectedPosition(self, camera):
-        self.updateCameraPerspective(camera, 'not default')
+        self.updateCameraPerspective(camera)
 
         ex = camera.displayX
         ey = camera.displayY
@@ -111,15 +101,10 @@ class Camera:
         self.x = x
         self.y = y
         self.z = z
-        # These theta values are the angles of rotation used to describe the orientation of the camera, specifically Tait-Bryan angles.
-        #* I need to convert these into yaw, pitch, and roll somehow
-        self.thetaX = thetaX
-        self.thetaY = thetaY
-        self.thetaZ = thetaZ
 
         self.rotationMatrix = numpy.identity(3)
 
-        # These display values are the position of the display relative to the camera position and orientation (like a projector).
+        # These display values are the position of the display relative to the camera position and orientation (like a projector screen).
         self.displayX = displayX
         self.displayY = displayY
         self.displayZ = displayZ
@@ -129,12 +114,7 @@ class Camera:
         self.y += deltaY
         self.z += deltaZ
 
-    def moveOrientation(self, deltaThetaX, deltaThetaY, deltaThetaZ):
-        self.thetaX = deltaThetaX
-        self.thetaY = deltaThetaY
-        self.thetaZ = deltaThetaZ
-
-    def moveOrientation2(self, matrix):
+    def moveOrientation(self, matrix):
         self.rotationMatrix = numpy.matmul(matrix, self.rotationMatrix)
 
 class RectangularPrism:
@@ -156,6 +136,8 @@ class Shape:
         vertices = baseShape[0]
         self.edges = baseShape[1]
         self.thetaX, self.thetaY, self.thetaZ = orientation
+        yzMatrix = numpy.matmul(pitchMatrix(self.thetaY), rollMatrix(self.thetaZ))
+        self.rotationMatrix = numpy.matmul(yawMatrix(self.thetaX), yzMatrix)
 
         for index, vertex in enumerate(vertices):
             vertices[index] = Vertex(vertex)
@@ -192,7 +174,7 @@ class Shape:
             ay = vertex.y - self.center[1]
             az = vertex.z - self.center[2]
 
-            dx, dy, dz = Rotation3D((ax,ay,az),(tx,ty,tz),False)
+            dx, dy, dz = Rotation3DMatrix((ax, ay, az), self.rotationMatrix, False)
 
             orientedVertices[index] = Vertex((dx + self.center[0], dy + self.center[1], dz + self.center[2]))
 
@@ -260,23 +242,29 @@ class Screen:
             if pg.key.get_pressed()[pg.K_LSHIFT]:
                 yInput -= 0.05
             if pg.key.get_pressed()[pg.K_LEFT]:
-                self.currentCamera.moveOrientation2(pitchMatrix(0.02))
+                self.currentCamera.moveOrientation(yawMatrix(0.02))
             if pg.key.get_pressed()[pg.K_RIGHT]:
-                self.currentCamera.moveOrientation2(pitchMatrix(-0.02))
+                self.currentCamera.moveOrientation(yawMatrix(-0.02))
             if pg.key.get_pressed()[pg.K_UP]:
-                self.currentCamera.moveOrientation2(yawMatrix(0.02))
+                self.currentCamera.moveOrientation(pitchMatrix(0.02))
             if pg.key.get_pressed()[pg.K_DOWN]:
-                self.currentCamera.moveOrientation2(yawMatrix(-0.02))
+                self.currentCamera.moveOrientation(pitchMatrix(-0.02))
             if pg.key.get_pressed()[pg.K_q]:
-                self.currentCamera.moveOrientation2(rollMatrix(0.02))
+                self.currentCamera.moveOrientation(rollMatrix(-0.02))
             if pg.key.get_pressed()[pg.K_e]:
-                self.currentCamera.moveOrientation2(rollMatrix(-0.02))
+                self.currentCamera.moveOrientation(rollMatrix(0.02))
             if pg.key.get_pressed()[pg.K_r]:
                 self.currentCamera.rotationMatrix = numpy.identity(3)
 
-            self.currentCamera.x += xInput
-            self.currentCamera.y += yInput
-            self.currentCamera.z += zInput
+            inputX = Rotation3DMatrix((xInput, 0, 0), numpy.transpose(self.currentCamera.rotationMatrix), False)
+            inputY = Rotation3DMatrix((0, yInput, 0), numpy.transpose(self.currentCamera.rotationMatrix), False)
+            inputZ = Rotation3DMatrix((0, 0, zInput), numpy.transpose(self.currentCamera.rotationMatrix), False)
+
+            inputX, inputY, inputZ = inputX + inputY + inputZ
+
+            self.currentCamera.x += inputX
+            self.currentCamera.y += inputY
+            self.currentCamera.z += inputZ
 
             self.updateCanvas(elapsedTime)
             for event in pg.event.get():
@@ -284,9 +272,8 @@ class Screen:
                     pg.quit()
                     exit()
 
-#[Vertex(1,1,1),Vertex(1,1,-1),Vertex(1,-1,1),Vertex(1,-1,-1),Vertex(-1,1,1),Vertex(-1,1,-1),Vertex(-1,-1,1),Vertex(-1,-1,-1)]
-cube1 = Shape(RectangularPrism((-1,-1,2),(1,1,4)).getShape(), (0,0,0))
-cube2 = Shape(RectangularPrism((-2,-3,-4),(2,3,-6)).getShape(), (0,0,math.pi/4))
+cube1 = Shape(RectangularPrism((-3,-1,2),(3,1,8)).getShape(), (0,0,0))
+cube2 = Shape(RectangularPrism((-1,1,4),(1,3,6)).getShape(), (0,0,math.pi/4))
 
 screen1 = Screen(Camera(0,0,0,0,0,0,0,0,0))
 

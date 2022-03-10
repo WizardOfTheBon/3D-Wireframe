@@ -260,17 +260,17 @@ class Screen:
             if pg.key.get_pressed()[pg.K_LSHIFT]:
                 yInput -= 0.05
             if pg.key.get_pressed()[pg.K_LEFT]:
-                self.currentCamera.moveOrientation2(pitchMatrix(-0.02))
-            if pg.key.get_pressed()[pg.K_RIGHT]:
                 self.currentCamera.moveOrientation2(pitchMatrix(0.02))
+            if pg.key.get_pressed()[pg.K_RIGHT]:
+                self.currentCamera.moveOrientation2(pitchMatrix(-0.02))
             if pg.key.get_pressed()[pg.K_UP]:
-                self.currentCamera.moveOrientation2(yawMatrix(-0.02))
-            if pg.key.get_pressed()[pg.K_DOWN]:
                 self.currentCamera.moveOrientation2(yawMatrix(0.02))
+            if pg.key.get_pressed()[pg.K_DOWN]:
+                self.currentCamera.moveOrientation2(yawMatrix(-0.02))
             if pg.key.get_pressed()[pg.K_q]:
-                self.currentCamera.moveOrientation2(rollMatrix(-0.02))
-            if pg.key.get_pressed()[pg.K_e]:
                 self.currentCamera.moveOrientation2(rollMatrix(0.02))
+            if pg.key.get_pressed()[pg.K_e]:
+                self.currentCamera.moveOrientation2(rollMatrix(-0.02))
             if pg.key.get_pressed()[pg.K_r]:
                 self.currentCamera.rotationMatrix = numpy.identity(3)
 
@@ -282,7 +282,7 @@ class Screen:
             for event in pg.event.get():
                 if event.type == pg.QUIT:
                     pg.quit()
-                    quit()
+                    exit()
 
 #[Vertex(1,1,1),Vertex(1,1,-1),Vertex(1,-1,1),Vertex(1,-1,-1),Vertex(-1,1,1),Vertex(-1,1,-1),Vertex(-1,-1,1),Vertex(-1,-1,-1)]
 cube1 = Shape(RectangularPrism((-1,-1,2),(1,1,4)).getShape(), (0,0,0))

@@ -240,6 +240,33 @@ class Shape:
 
         return(orientedVertices)
 
+class InfoUI:
+    def __init__(self, screenSize, location):
+        self.screenSize = screenSize
+        self.center = (self.screenSize[0]/2, self.screenSize[1]/2)
+        self.location = location
+        self.surface = pg.Surface(self.screenSize)
+
+    def drawBackground(self):
+        self.surface.fill("black")
+        pg.draw.rect(self.surface, "gray", (0,0,self.screenSize[0],self.screenSize[1]), 1, 1)
+        
+        pg.draw.line(self.surface, (50,50,50), (self.center[0], 40), (self.center[0], self.screenSize[1] - 40), 6)
+        pg.draw.line(self.surface, (50,50,50), (40, self.center[1]), (self.screenSize[0] - 40, self.center[1]), 6)
+        pg.draw.line(self.surface, (50,50,50), (self.screenSize[0]-20, 40), (self.screenSize[0]-20, self.screenSize[1]-40), 6)
+    
+    def drawVelocities(self, velocities):
+        lengths = []
+        for velocity in velocities:
+            lengths.append(velocity*50)
+        pg.draw.line(self.surface, (255,255 - abs(int(lengths[2])),0), self.center, (self.center[0], self.center[1] - lengths[2]), 3)
+        pg.draw.line(self.surface, (255,255 - abs(int(lengths[0])),0), self.center, (self.center[0] + lengths[0], self.center[1]), 3)
+        pg.draw.line(self.surface, (255,255 - abs(int(lengths[1])),0), (self.screenSize[0]-20, self.center[1]), (self.screenSize[0]-20, self.center[1] - lengths[1]), 3)
+
+    def update(self, velocities):
+        self.drawBackground()
+        self.drawVelocities(velocities)
+
 class Screen:
     def __init__(self, camera):
         self.screenSize = (1280, 720)
@@ -265,6 +292,8 @@ class Screen:
         cube2.rotationMatrix = numpy.matmul(yawMatrix(0.02), cube2.rotationMatrix)
         self.displayShape(cube2)
         self.displayShape(cube3)
+        compass.update((self.currentCamera.xVel, self.currentCamera.yVel, self.currentCamera.zVel))
+        self.screen.blit(compass.surface, compass.location)
         pg.display.update()
 
     def displayShape(self, shape):
@@ -298,13 +327,20 @@ class Screen:
             rollInput = 0
 
             friction = 0
-            rotationalFriction = 0.0005
+            rotationalFriction = 0
             if pg.key.get_pressed()[pg.K_v]:
-                friction = 0.005
+                friction = 0.001
             if pg.key.get_pressed()[pg.K_b]:
-                rotationalFriction *= 10
-            acceleration = 0.003
-            rotationalAcceleration = 0.001
+                rotationalFriction = 0.001
+            acceleration = 0.002
+            rotationalAcceleration = 0.0005
+            if pg.key.get_pressed()[pg.K_LCTRL]:
+                acceleration *= 4
+            if pg.key.get_pressed()[pg.K_c]:
+                acceleration /= 4
+                rotationalAcceleration /= 4
+                friction = 0.0002
+                rotationalFriction = 0.0001
             if pg.key.get_pressed()[pg.K_w]:
                 zInput += acceleration
             if pg.key.get_pressed()[pg.K_s]:
@@ -356,5 +392,6 @@ cube2 = Shape(RectangularPrism((-1,1,4),(1,3,6)).getShape(), (0,0,math.pi/4))
 cube3 = Shape(RectangularPrism((-100,-100,-100),(100,100,100)).getShape(), (0,0,0))
 
 screen1 = Screen(Camera(0,0,0,0,0,0,0,0,0))
+compass = InfoUI((200,200), (20, screen1.screenSize[1] - 220))
 
 screen1.start()

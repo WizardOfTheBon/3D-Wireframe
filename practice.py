@@ -1,9 +1,41 @@
+from pyexpat import XML_PARAM_ENTITY_PARSING_UNLESS_STANDALONE
 import pygame as pg
 import time
 import math
 import numpy
 
 pg.init()
+
+def applyFriction(velocities, friction):
+    magnitude = 0
+    for velocity in velocities:
+        magnitude += velocity**2
+    magnitude = math.sqrt(magnitude)
+    
+    if magnitude != 0:
+        ratios = []
+        for velocity in velocities:
+            ratios.append(velocity/magnitude)
+
+        if magnitude > 0:
+            if magnitude < friction:
+                magnitude = 0
+            else:
+                if magnitude > 0:
+                    magnitude -= friction
+                else:
+                    magnitude += friction
+        
+        newVelocities = []
+
+        for ratio in ratios:
+            newVelocities.append(ratio*magnitude)
+    else:
+        newVelocities = []
+        for i in velocities:
+            newVelocities.append(0)
+
+    return(newVelocities)
 
 def rollMatrix(theta):
     matrix = numpy.array([(math.cos(theta), -math.sin(theta), 0), (math.sin(theta), math.cos(theta), 0), (0,0,1)])
@@ -16,27 +48,19 @@ def yawMatrix(theta):
 def pitchMatrix(theta):
     matrix = numpy.array([(1,0,0), (0, math.cos(theta), -math.sin(theta)), (0, math.sin(theta), math.cos(theta))])
     return(matrix)
-'''
-def Rotation3D(position, orientation, isCamera):
-    ax, ay, az = position
-    tx, ty, tz = orientation
-    if isCamera:
-        inverted = -1
-    else:
-        inverted = 1
-    startMatrix = numpy.array([ax,ay,az])
-    zRotationMatrix = numpy.array([(math.cos(tz), -inverted*math.sin(tz), 0), (inverted*math.sin(tz), math.cos(tz), 0), (0,0,1)])
-    yRotationMatrix = numpy.array([(math.cos(ty), 0, inverted*math.sin(ty)), (0,1,0), (-inverted*math.sin(ty), 0, math.cos(ty))])
-    xRotationMatrix = numpy.array([(1,0,0), (0, math.cos(tx), -inverted*math.sin(tx)), (0, inverted*math.sin(tx), math.cos(tx))])
 
-    zMatrix = numpy.matmul(startMatrix, zRotationMatrix)
-    yzMatrix = numpy.matmul(zMatrix, yRotationMatrix)
-    xyzMatrix = numpy.matmul(yzMatrix, xRotationMatrix)
+def getYawPitchRoll(matrix):
+    alpha = math.atan2(matrix[1][0], matrix[0][0])
+    beta = math.atan2(-matrix[2][0], math.hypot(matrix[2][1], matrix[2][2]))
+    gamma = math.atan2(matrix[2][1], matrix[2][2])
+    return(alpha, beta, gamma)
 
-    dx, dy, dz = xyzMatrix
+def combineYawPitchRoll(yaw, pitch, roll):
+    '''This function is broken and doesnt work right'''
+    matrix1 = numpy.matmul(pitchMatrix(pitch), rollMatrix(roll))
+    matrix2 = numpy.matmul(yawMatrix(yaw), matrix1)
+    return(matrix2)
 
-    return((dx, dy, dz))
-'''
 def Rotation3DMatrix(position, orientation, isInverted):
     ax, ay, az = position
     rotationMatrix = orientation
@@ -102,6 +126,14 @@ class Camera:
         self.y = y
         self.z = z
 
+        self.xVel = 0
+        self.yVel = 0
+        self.zVel = 0
+
+        self.yawVel = 0
+        self.pitchVel = 0
+        self.rollVel = 0
+
         self.rotationMatrix = numpy.identity(3)
 
         # These display values are the position of the display relative to the camera position and orientation (like a projector screen).
@@ -109,13 +141,44 @@ class Camera:
         self.displayY = displayY
         self.displayZ = displayZ
 
-    def movePosition(self, deltaX, deltaY, deltaZ):
+    def setPosition(self, deltaX, deltaY, deltaZ):
         self.x += deltaX
         self.y += deltaY
         self.z += deltaZ
 
+    def updatePosition(self):
+        self.x += self.xVel
+        self.y += self.yVel
+        self.z += self.zVel
+    
+    def changeVelocity(self, deltaX, deltaY, deltaZ):
+        xVel = Rotation3DMatrix((deltaX, 0, 0), numpy.transpose(self.rotationMatrix), False)
+        yVel = Rotation3DMatrix((0, deltaY, 0), numpy.transpose(self.rotationMatrix), False)
+        zVel = Rotation3DMatrix((0, 0, deltaZ), numpy.transpose(self.rotationMatrix), False)
+
+        xVel, yVel, zVel = xVel + yVel + zVel
+        
+        self.xVel += xVel
+        self.yVel += yVel
+        self.zVel += zVel
+    
+    def changeRotationalVelocity(self, yawVelocity, pitchVelocity, rollVelocity):
+        self.yawVel += yawVelocity
+        self.pitchVel += pitchVelocity
+        self.rollVel += rollVelocity
+    
+    def setVelocity(self, x, y, z):
+        self.xVel = x
+        self.yVel = y
+        self.zVel = z
+
     def moveOrientation(self, matrix):
         self.rotationMatrix = numpy.matmul(matrix, self.rotationMatrix)
+    
+    def updateOrientation(self):
+        self.rotationMatrix = numpy.matmul(yawMatrix(self.yawVel), self.rotationMatrix)
+        self.rotationMatrix = numpy.matmul(pitchMatrix(self.pitchVel), self.rotationMatrix)
+        self.rotationMatrix = numpy.matmul(rollMatrix(self.rollVel), self.rotationMatrix)
 
 class RectangularPrism:
     def __init__(self, corner, oppositeCorner):
@@ -166,9 +229,6 @@ class Shape:
 
     def getOrientedVertices(self):
         orientedVertices = [0]*len(self.vertices)
-        tx = self.thetaX
-        ty = self.thetaY
-        tz = self.thetaZ
         for index, vertex in enumerate(self.vertices):    
             ax = vertex.x - self.center[0]
             ay = vertex.y - self.center[1]
@@ -202,7 +262,9 @@ class Screen:
     def updateCanvas(self, elapsedTime):
         self.screen.blit(self.background, (0,0))
         self.displayShape(cube1)
+        cube2.rotationMatrix = numpy.matmul(yawMatrix(0.02), cube2.rotationMatrix)
         self.displayShape(cube2)
+        self.displayShape(cube3)
         pg.display.update()
 
     def displayShape(self, shape):
@@ -223,49 +285,66 @@ class Screen:
 
     def start(self):
         startTime = time.time()
+        lastPressedKeys = []
         while True:
             time.sleep(0.001)
             elapsedTime = time.time() - startTime
             xInput = 0
             yInput = 0
             zInput = 0
+
+            pitchInput = 0
+            yawInput = 0
+            rollInput = 0
+
+            friction = 0
+            rotationalFriction = 0.0005
+            if pg.key.get_pressed()[pg.K_v]:
+                friction = 0.005
+            if pg.key.get_pressed()[pg.K_b]:
+                rotationalFriction *= 10
+            acceleration = 0.003
+            rotationalAcceleration = 0.001
             if pg.key.get_pressed()[pg.K_w]:
-                zInput += 0.05
-            if pg.key.get_pressed()[pg.K_a]:
-                xInput -= 0.05
+                zInput += acceleration
             if pg.key.get_pressed()[pg.K_s]:
-                zInput -= 0.05
+                zInput -= acceleration
+            if pg.key.get_pressed()[pg.K_a]:
+                xInput -= acceleration
             if pg.key.get_pressed()[pg.K_d]:
-                xInput += 0.05
+                xInput += acceleration
             if pg.key.get_pressed()[pg.K_SPACE]:
-                yInput += 0.05
+                yInput += acceleration
             if pg.key.get_pressed()[pg.K_LSHIFT]:
-                yInput -= 0.05
+                yInput -= acceleration
+
             if pg.key.get_pressed()[pg.K_LEFT]:
-                self.currentCamera.moveOrientation(yawMatrix(0.02))
+                yawInput += rotationalAcceleration
             if pg.key.get_pressed()[pg.K_RIGHT]:
-                self.currentCamera.moveOrientation(yawMatrix(-0.02))
+                yawInput -= rotationalAcceleration
             if pg.key.get_pressed()[pg.K_UP]:
-                self.currentCamera.moveOrientation(pitchMatrix(0.02))
+                pitchInput += rotationalAcceleration
             if pg.key.get_pressed()[pg.K_DOWN]:
-                self.currentCamera.moveOrientation(pitchMatrix(-0.02))
+                pitchInput -= rotationalAcceleration
             if pg.key.get_pressed()[pg.K_q]:
-                self.currentCamera.moveOrientation(rollMatrix(-0.02))
+                rollInput -= rotationalAcceleration
             if pg.key.get_pressed()[pg.K_e]:
-                self.currentCamera.moveOrientation(rollMatrix(0.02))
+                rollInput += rotationalAcceleration
+            
             if pg.key.get_pressed()[pg.K_r]:
                 self.currentCamera.rotationMatrix = numpy.identity(3)
+                self.currentCamera.x = 0
+                self.currentCamera.y = 0
+                self.currentCamera.z = 0
 
-            inputX = Rotation3DMatrix((xInput, 0, 0), numpy.transpose(self.currentCamera.rotationMatrix), False)
-            inputY = Rotation3DMatrix((0, yInput, 0), numpy.transpose(self.currentCamera.rotationMatrix), False)
-            inputZ = Rotation3DMatrix((0, 0, zInput), numpy.transpose(self.currentCamera.rotationMatrix), False)
-
-            inputX, inputY, inputZ = inputX + inputY + inputZ
-
-            self.currentCamera.x += inputX
-            self.currentCamera.y += inputY
-            self.currentCamera.z += inputZ
-
+            self.currentCamera.yawVel, self.currentCamera.pitchVel, self.currentCamera.rollVel = applyFriction((self.currentCamera.yawVel, self.currentCamera.pitchVel, self.currentCamera.rollVel), rotationalFriction)
+            self.currentCamera.changeRotationalVelocity(yawInput, pitchInput, rollInput)
+            self.currentCamera.updateOrientation()
+            
+            self.currentCamera.xVel, self.currentCamera.yVel, self.currentCamera.zVel = applyFriction((self.currentCamera.xVel, self.currentCamera.yVel, self.currentCamera.zVel), friction)
+            self.currentCamera.changeVelocity(xInput, yInput, zInput)
+            self.currentCamera.updatePosition()
+            
             self.updateCanvas(elapsedTime)
             for event in pg.event.get():
                 if event.type == pg.QUIT:
@@ -274,6 +353,7 @@ class Screen:
 
 cube1 = Shape(RectangularPrism((-3,-1,2),(3,1,8)).getShape(), (0,0,0))
 cube2 = Shape(RectangularPrism((-1,1,4),(1,3,6)).getShape(), (0,0,math.pi/4))
+cube3 = Shape(RectangularPrism((-100,-100,-100),(100,100,100)).getShape(), (0,0,0))
 
 screen1 = Screen(Camera(0,0,0,0,0,0,0,0,0))
 

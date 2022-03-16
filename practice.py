@@ -95,6 +95,9 @@ class Vertex:
         ey = camera.displayY
         ez = camera.displayZ
 
+        if self.dz == 0:
+            self.dz = -1
+
         x = ((ez / self.dz) * self.dx) + ex
         y = ((ez / self.dz) * self.dy) + ey
 
@@ -259,9 +262,9 @@ class InfoUI:
         lengths = []
         for velocity in velocities:
             lengths.append(velocity*50)
-        pg.draw.line(self.surface, (255,255 - abs(int(lengths[2])),0), self.center, (self.center[0], self.center[1] - lengths[2]), 3)
-        pg.draw.line(self.surface, (255,255 - abs(int(lengths[0])),0), self.center, (self.center[0] + lengths[0], self.center[1]), 3)
-        pg.draw.line(self.surface, (255,255 - abs(int(lengths[1])),0), (self.screenSize[0]-20, self.center[1]), (self.screenSize[0]-20, self.center[1] - lengths[1]), 3)
+        pg.draw.line(self.surface, (255,0,0), self.center, (self.center[0], self.center[1] - lengths[2]), 3)
+        pg.draw.line(self.surface, (255,0,0), self.center, (self.center[0] + lengths[0], self.center[1]), 3)
+        pg.draw.line(self.surface, (255,0,0), (self.screenSize[0]-20, self.center[1]), (self.screenSize[0]-20, self.center[1] - lengths[1]), 3)
 
     def update(self, velocities):
         self.drawBackground()
@@ -289,10 +292,11 @@ class Screen:
     def updateCanvas(self, elapsedTime):
         self.screen.blit(self.background, (0,0))
         self.displayShape(cube1)
-        cube2.rotationMatrix = numpy.matmul(yawMatrix(0.02), cube2.rotationMatrix)
+        cube2.rotationMatrix = numpy.matmul(yawMatrix(math.cos(elapsedTime)/43), cube2.rotationMatrix)
+        cube2.rotationMatrix = numpy.matmul(rollMatrix(math.sin(elapsedTime)/50), cube2.rotationMatrix)
         self.displayShape(cube2)
         self.displayShape(cube3)
-        compass.update((self.currentCamera.xVel, self.currentCamera.yVel, self.currentCamera.zVel))
+        compass.update(numpy.matmul(self.currentCamera.rotationMatrix, (self.currentCamera.xVel, self.currentCamera.yVel, self.currentCamera.zVel)))
         self.screen.blit(compass.surface, compass.location)
         pg.display.update()
 

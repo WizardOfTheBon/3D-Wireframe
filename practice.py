@@ -1,4 +1,3 @@
-from pyexpat import XML_PARAM_ENTITY_PARSING_UNLESS_STANDALONE
 import pygame as pg
 import time
 import math

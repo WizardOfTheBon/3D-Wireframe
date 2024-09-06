@@ -81,11 +81,11 @@ class Vertex:
         az = self.z - camera.z
 
         startMatrix = numpy.array([ax,ay,az])
-        finalMatrix = numpy.matmul(camera.rotationMatrix, startMatrix)
+        endMatrix = numpy.matmul(camera.rotationMatrix, startMatrix)
 
-        self.dx = finalMatrix[0]
-        self.dy = finalMatrix[1]
-        self.dz = finalMatrix[2]
+        self.dx = endMatrix[0]
+        self.dy = endMatrix[1]
+        self.dz = endMatrix[2]
 
     def getProjectedPosition(self, camera):
         self.updateCameraPerspective(camera)
@@ -94,15 +94,12 @@ class Vertex:
         ey = camera.displayY
         ez = camera.displayZ
 
-        if self.dz == 0:
-            self.dz = -1
+        if self.dz <= 0:  # If z becomes 0 or a negative number, it breaks the math and then the display. This technically means that all points are being rendered the whole time, but this is already horribly optimized anyway.
+            self.dz = 0.01  
 
-        x = ((ez / self.dz) * self.dx) + ex
+        x = ((ez / self.dz) * self.dx) + ex 
         y = ((ez / self.dz) * self.dy) + ey
-
-        if abs(x) == math.inf or abs(y) == math.inf:
-            x = None
-            y = None
+        
 
         return((x,y))
 
@@ -123,7 +120,7 @@ class Vertex:
         return((x,y))
 
 class Camera:
-    def __init__(self, x, y, z, thetaX, thetaY, thetaZ, displayX, displayY, displayZ):
+    def __init__(self, x, y, z, displayX, displayY, displayZ):
         self.x = x
         self.y = y
         self.z = z
@@ -188,25 +185,26 @@ class RectangularPrism:
         x2, y2, z2 = oppositeCorner
         self.vertices = [(x1,y1,z1),(x1,y1,z2),(x1,y2,z1),(x1,y2,z2),
                          (x2,y1,z1),(x2,y1,z2),(x2,y2,z1),(x2,y2,z2)]
-        self.edges = [(0,1),(2,3),(4,5),(6,7),(0,2),(1,3),(4,6),(5,7),(0,4),(1,5),(2,6),(3,7)] # These are the indexes for the list of vertices
+        self.edges = [(0,1),(2,3),(4,5),(6,7),(0,2),(1,3),(4,6),(5,7),(0,4),(1,5),(2,6),(3,7)] # These are the indices for the list of vertices. It makes all the edges of the prism.
 
     def getShape(self):
         return(self.vertices, self.edges)
 
 class Shape:
-    def __init__(self, baseShape, orientation):
+    def __init__(self, baseShape, orientation, shapeIndex):
         '''The baseShape is a tuple containing the vertices and the edges. The vertices are a list of tuples, each containing x, y, and z. 
         The edges are a list of tuples, each containing 2 indices to reference the list of vertices. The tuple of indices can turn into a tuple of vertices, which is how a line is drawn.
         The orientation is a tuple containing the angles for x rotation, y rotation, and z rotation. These are Tait-Bryan angles for orientation in 3D space.'''
-        vertices = baseShape[0]
+        self.shapeIndex = shapeIndex
+        self.vertices = baseShape[0]
         self.edges = baseShape[1]
         self.thetaX, self.thetaY, self.thetaZ = orientation
         yzMatrix = numpy.matmul(pitchMatrix(self.thetaY), rollMatrix(self.thetaZ))
         self.rotationMatrix = numpy.matmul(yawMatrix(self.thetaX), yzMatrix)
 
-        for index, vertex in enumerate(vertices):
-            vertices[index] = Vertex(vertex)
-        self.vertices = vertices
+        for index, vertex in enumerate(self.vertices):
+            self.vertices[index] = Vertex(vertex)
+        self.vertices = self.vertices
 
         self.center = [0,0,0]
         self.updateCenter()
@@ -260,7 +258,10 @@ class InfoUI:
     def drawVelocities(self, velocities):
         lengths = []
         for velocity in velocities:
-            lengths.append(velocity*50)
+            if velocity < 1:
+                lengths.append(velocity*500)
+            else:
+                lengths.append(500)
         pg.draw.line(self.surface, (255,0,0), self.center, (self.center[0], self.center[1] - lengths[2]), 3)
         pg.draw.line(self.surface, (255,0,0), self.center, (self.center[0] + lengths[0], self.center[1]), 3)
         pg.draw.line(self.surface, (255,0,0), (self.screenSize[0]-20, self.center[1]), (self.screenSize[0]-20, self.center[1] - lengths[1]), 3)
@@ -302,16 +303,15 @@ class Screen:
     def displayShape(self, shape):
         shapeSurface = pg.Surface(self.screenSize, pg.SRCALPHA)
         for index, edge in enumerate(shape.edges):
-            vertex1 = shape.getOrientedVertices()[edge[0]]
-            vertex2 = shape.getOrientedVertices()[edge[1]]
-            point1 = self.cartesianConvertToDisplay(vertex1.getProjectedPosition(self.currentCamera))
+            vertex1 = shape.getOrientedVertices()[edge[0]]  # This orients the vertices to a physical position relative to the camera position and orientation.
+            vertex2 = shape.getOrientedVertices()[edge[1]]  # The 0 and 1 represent the two vertices that make up the edge that is about to be drawn.
+            point1 = self.cartesianConvertToDisplay(vertex1.getProjectedPosition(self.currentCamera))  # This converts the vertex position in space (relative to the camera) into a position on a hypothetical screen in front of the camera.
             point2 = self.cartesianConvertToDisplay(vertex2.getProjectedPosition(self.currentCamera))
+            
 
-            if vertex1.dz > 0 and vertex2.dz > 0:
-                if index == 0:
-                    pg.draw.line(shapeSurface, (255,255,255), point1, point2, 1)
-                else:
-                    pg.draw.line(shapeSurface, (255,255-23*index,23*index), point1, point2, 1)
+            if vertex1.dz > 0 or vertex2.dz > 0:
+                pg.draw.line(shapeSurface, (255,255-23*index,23*index), point1, point2, 1)
+                    
 
         self.screen.blit(shapeSurface, (0,0))
 
@@ -329,14 +329,14 @@ class Screen:
             yawInput = 0
             rollInput = 0
 
-            friction = 0
-            rotationalFriction = 0
+            friction = 0.0001
+            rotationalFriction = 0.0001
             if pg.key.get_pressed()[pg.K_v]:
                 friction = 0.001
             if pg.key.get_pressed()[pg.K_b]:
                 rotationalFriction = 0.001
-            acceleration = 0.002
-            rotationalAcceleration = 0.0005
+            acceleration = 0.0005
+            rotationalAcceleration = 0.0003
             if pg.key.get_pressed()[pg.K_LCTRL]:
                 acceleration *= 4
             if pg.key.get_pressed()[pg.K_c]:
@@ -390,11 +390,11 @@ class Screen:
                     pg.quit()
                     exit()
 
-cube1 = Shape(RectangularPrism((-3,-1,2),(3,1,8)).getShape(), (0,0,0))
-cube2 = Shape(RectangularPrism((-1,1,4),(1,3,6)).getShape(), (0,0,math.pi/4))
-cube3 = Shape(RectangularPrism((-100,-100,-100),(100,100,100)).getShape(), (0,0,0))
+cube1 = Shape(RectangularPrism((-3,-1,2),(3,1,8)).getShape(), (0,0,0), 1)
+cube2 = Shape(RectangularPrism((-1,1,4),(1,3,6)).getShape(), (0,0,math.pi/4), 2)
+cube3 = Shape(RectangularPrism((-100,-100,-100),(100,100,100)).getShape(), (0,0,0), 3)
 
-screen1 = Screen(Camera(0,0,0,0,0,0,0,0,0))
+screen1 = Screen(Camera(0,0,0,0,0,0))
 compass = InfoUI((200,200), (20, screen1.screenSize[1] - 220))
 
 screen1.start()
